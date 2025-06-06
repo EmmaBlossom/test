@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Кэшбэк предложения</title>
+<style>
+body{font-family:Arial,Helvetica,sans-serif;margin:20px;}
+h1{text-align:center;}
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px;}
+.filters label{display:block;font-size:14px;margin-bottom:2px;}
+.filters select,.filters input[type="text"]{padding:5px;font-size:14px;}
+#bank-filter{max-height:150px;overflow:auto;border:1px solid #ccc;padding:5px;}
+#bank-filter label{display:block;white-space:nowrap;}
+#message{margin-top:10px;color:#555;}
+#data-table{width:100%;border-collapse:collapse;margin-top:10px;display:none;}
+#data-table th,#data-table td{border:1px solid #ccc;padding:5px;font-size:14px;}
+#data-table th{background:#f2f2f2;}
+#details{margin-top:15px;border:1px solid #ccc;padding:10px;display:none;word-break:break-word;}
+@media(max-width:600px){
+  .filters{flex-direction:column;}
+  #data-table th,#data-table td{font-size:12px;padding:4px;}
+}
+</style>
+</head>
+<body>
+<h1>Кэшбэк предложения</h1>
+<div class="filters">
+ <div>
+   <label for="search">Поиск</label>
+   <input type="text" id="search" placeholder="Введите текст" />
+ </div>
+ <div>
+   <label>Категория</label>
+   <select id="category-filter"><option value="">Все</option></select>
+ </div>
+ <div>
+   <label>Банк</label>
+   <div id="bank-filter"></div>
+ </div>
+ <div>
+   <label>Компания/бренд</label>
+   <select id="company-filter"><option value="">Все</option></select>
+ </div>
+ <div>
+   <label>Размер кэшбека/скидки</label>
+   <select id="cashback-filter"><option value="">Все</option></select>
+ </div>
+ <div style="align-self:end;">
+   <button id="reset">Сбросить фильтры</button>
+ </div>
+</div>
+<div id="message">Выберите фильтр «Категория», чтобы таблица отобразилась</div>
+<table id="data-table">
+  <thead>
+    <tr>
+      <th>Банк</th>
+      <th>Карта</th>
+      <th>Компания/бренд</th>
+      <th>Размер кэшбека/скидки</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+<div id="details"></div>
+<script>
+let rawData=[];
+let currentData=[];
+const filters={bank:new Set(),category:'',company:'',cashback:'',search:''};
+fetch('csvjson.json')
+  .then(r=>r.text())
+  .then(t=>{
+    t='['+t.trim().replace(/}\s*,\s*\n\s*{/g,'},{')+']';
+    rawData=JSON.parse(t);
+    updateFilters();
+    update();
+  });
+function update(){
+  currentData=rawData.filter(row=>{
+    if(filters.bank.size&& !filters.bank.has(row['Банк']))return false;
+    if(filters.category && row['Категория']!==filters.category)return false;
+    if(filters.company && row['Компания/бренд']!==filters.company)return false;
+    if(filters.cashback && row['Размер кэшбека/скидки']!==filters.cashback)return false;
+    return true;
+  });
+  updateFilters();
+  let search=filters.search.toLowerCase();
+  let showTable=!!filters.category || search;
+  let data=currentData.filter(row=>{
+    if(!search)return true;
+    return Object.values(row).some(v=>String(v).toLowerCase().includes(search));
+  });
+  document.getElementById('data-table').style.display=showTable&&data.length?'':'none';
+  document.getElementById('message').style.display=showTable?'none':'';
+  populateTable(data);
+}
+function populateTable(data){
+  const tbody=document.querySelector('#data-table tbody');
+  tbody.innerHTML='';
+  data.forEach((row,i)=>{
+    const tr=document.createElement('tr');
+    tr.dataset.index=i;
+    tr.innerHTML=`<td>${row['Банк']}</td><td>${row['Карта']}</td><td>${row['Компания/бренд']}</td><td>${row['Размер кэшбека/скидки']}</td>`;
+    tr.addEventListener('click',()=>showDetails(row));
+    tbody.appendChild(tr);
+  });
+}
+function showDetails(row){
+  const div=document.getElementById('details');
+  div.innerHTML='';
+  for(const [k,v] of Object.entries(row)){
+    const p=document.createElement('p');
+    const val=String(v);
+    if(val.startsWith('http')){
+      p.innerHTML=`<strong>${k}:</strong> <a href="${val}" target="_blank">${val}</a>`;
+    }else{
+      p.innerHTML=`<strong>${k}:</strong> ${val}`;
+    }
+    div.appendChild(p);
+  }
+  div.style.display='block';
+  div.scrollIntoView({behavior:'smooth'});
+}
+function updateFilters(){
+  updateFilter('category-filter','Категория');
+  updateBankFilter();
+  updateFilter('company-filter','Компания/бренд');
+  updateFilter('cashback-filter','Размер кэшбека/скидки');
+}
+function filterExcept(key){
+  return rawData.filter(row=>{
+    if(key!=='bank' && filters.bank.size && !filters.bank.has(row['Банк'])) return false;
+    if(key!=='category' && filters.category && row['Категория']!==filters.category) return false;
+    if(key!=='company' && filters.company && row['Компания/бренд']!==filters.company) return false;
+    if(key!=='cashback' && filters.cashback && row['Размер кэшбека/скидки']!==filters.cashback) return false;
+    return true;
+  });
+}
+function updateFilter(elementId,key){
+  const select=document.getElementById(elementId);
+  const data=filterExcept(elementId.replace('-filter',''));
+  const opts=Array.from(new Set(data.map(r=>r[key]))).sort();
+  const current=select.value;
+  select.innerHTML='<option value="">Все</option>'+opts.map(v=>`<option value="${v}">${v}</option>`).join('');
+  if(current) select.value=current;
+}
+function updateBankFilter(){
+  const container=document.getElementById('bank-filter');
+  const data=filterExcept('bank');
+  const opts=Array.from(new Set(data.map(r=>r['Банк']))).sort();
+  const selected=Array.from(filters.bank);
+  container.innerHTML='';
+  opts.forEach(v=>{
+    const id='bank-'+v.replace(/\s+/g,'_');
+    const label=document.createElement('label');
+    label.innerHTML=`<input type="checkbox" id="${id}" value="${v}"> ${v}`;
+    const checkbox=label.querySelector('input');
+    checkbox.checked=filters.bank.has(v);
+    checkbox.addEventListener('change',e=>{
+      if(e.target.checked) filters.bank.add(v); else filters.bank.delete(v); update();
+    });
+    container.appendChild(label);
+  });
+  selected.forEach(v=>filters.bank.add(v));
+}
+// event listeners
+['category-filter','company-filter','cashback-filter'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',e=>{
+    const key=id.replace('-filter','');
+    filters[key]=e.target.value;
+    update();
+  });
+});
+document.getElementById('search').addEventListener('input',e=>{filters.search=e.target.value;update();});
+document.getElementById('reset').addEventListener('click',()=>{
+  filters.bank.clear();
+  filters.category='';
+  filters.company='';
+  filters.cashback='';
+  filters.search='';
+  document.getElementById('search').value='';
+  update();
+});
+</script>
+</body>
+</html>
